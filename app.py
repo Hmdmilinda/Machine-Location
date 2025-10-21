@@ -1,69 +1,64 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, redirect
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
-# Temporary in-memory storage (just for testing)
-data_storage = []
+# Google Sheet setup
+SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+CREDS_FILE = "credentials.json"  # <-- your downloaded JSON file
+SHEET_NAME = "App_Data"
 
-# Home route - displays the form
+# Connect to Google Sheet
+creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, SCOPE)
+client = gspread.authorize(creds)
+sheet = client.open(SHEET_NAME).sheet1
+
+# HTML template
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Data Entry App</title>
+    <style>
+        body { font-family: Arial; margin: 40px; background: #f9f9f9; }
+        form { background: white; padding: 20px; border-radius: 10px; width: 300px; margin-bottom: 30px; }
+        input, button { padding: 8px; margin: 5px 0; width: 100%; }
+        table { border-collapse: collapse; width: 60%; background: white; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background: #007BFF; color: white; }
+    </style>
+</head>
+<body>
+    <h2>📋 Data Entry (Google Sheet)</h2>
+    <form method="POST" action="/add">
+        <input type="text" name="text" placeholder="Enter text" required>
+        <input type="number" name="number" placeholder="Enter number" required>
+        <button type="submit">Submit</button>
+    </form>
+
+    <h3>Stored Data:</h3>
+    <table>
+        <tr><th>Text</th><th>Number</th></tr>
+        {% for row in data %}
+        <tr><td>{{ row[0] }}</td><td>{{ row[1] }}</td></tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
+"""
+
 @app.route('/')
-def home():
-    return render_template_string("""
-        <html>
-        <head>
-            <title>📊 Data Entry App</title>
-            <style>
-                body { font-family: Arial; text-align: center; margin-top: 100px; }
-                input, button { padding: 10px; margin: 5px; }
-                button { background-color: #4CAF50; color: white; border: none; }
-            </style>
-        </head>
-        <body>
-            <h2>📊 Data Entry App</h2>
-            <form method="POST" action="/submit">
-                <input name="text_input" placeholder="Enter text" required>
-                <input name="number_input" type="number" placeholder="Enter number" required>
-                <button type="submit">Submit</button>
-            </form>
-            <br>
-            <a href="/data">📄 View Submitted Data</a>
-        </body>
-        </html>
-    """)
+def index():
+    data = sheet.get_all_values()[1:]  # skip header
+    return render_template_string(HTML, data=data)
 
-# Submit route - handles form data
-@app.route('/submit', methods=['POST'])
-def submit():
-    text_value = request.form['text_input']
-    number_value = request.form['number_input']
+@app.route('/add', methods=['POST'])
+def add():
+    text = request.form['text']
+    number = request.form['number']
+    sheet.append_row([text, number])
+    return redirect('/')
 
-    # Store in memory for now
-    data_storage.append({'text': text_value, 'number': number_value})
-    print("Data received:", text_value, number_value)
-
-    return f"""
-        ✅ Data Saved Successfully!<br><br>
-        Text: {text_value}<br>
-        Number: {number_value}<br><br>
-        <a href='/'>Go Back</a> | <a href='/data'>View All Data</a>
-    """
-
-# Route to view all stored data
-@app.route('/data')
-def view_data():
-    if not data_storage:
-        return "<h3>No data submitted yet.</h3><a href='/'>Go Back</a>"
-
-    rows = "".join([f"<tr><td>{d['text']}</td><td>{d['number']}</td></tr>" for d in data_storage])
-    return f"""
-        <h2>📋 Submitted Data</h2>
-        <table border='1' cellpadding='8' style='margin:auto;'>
-            <tr><th>Text</th><th>Number</th></tr>
-            {rows}
-        </table>
-        <br><a href='/'>Go Back</a>
-    """
-
-# Run Flask app on Replit environment
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(debug=True)
